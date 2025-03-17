@@ -1,77 +1,65 @@
 pipeline {
-    agent any
 
+    agent any
     environment {
-        KUBECONFIG = "/etc/kubernetes/admin.conf"
+        registry = "gamalm2041/myapp_image"
+        registryCredential = 'dockerhub'
     }
 
-    stages {
-        stage('Clone Repository') {
+    stages{
+        stage('BUILD Artifact WAR File'){
             steps {
-                git 'https://github.com/your-repo/vprofile.git'
+                sh 'mvn clean install -DskipTests'
+            }
+            post {
+                success {
+                    echo 'Now Archiving...'
+                    archiveArtifacts artifacts: '**/target/*.war'
+                }
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build Docker Image'){
             steps {
-                script {
-                    sh 'docker build -t app_from_jenkins:v4 .'
+                sh 'docker build -t app_from_jenkins:v$BUILD_NUMBER .'
+            }
+            post {
+                success {
+                    echo 'Docker Image Successfully Built'
                 }
             }
         }
 
         stage('Test Docker Image') {
-            steps {
-                script {
-                    sh 'docker run -d --name lab4 -p 7070:8080 app_from_jenkins:v4'
+            steps{
+              sh 'docker run -d --name lab$BUILD_NUMBER -p 7070:8080 app_from_jenkins:v$BUILD_NUMBER'
+            }
+            post {
+                success {
+                    echo 'Docker Container Successfully Test'
                 }
             }
         }
 
-        stage('Remove Test Container') {
-            steps {
-                script {
-                    sh 'docker rm -f lab4'
+        stage('Remove Container') {
+            steps{
+              sh 'docker rm -f lab$BUILD_NUMBER'
+            }
+            post {
+                success {
+                    echo 'Docker Container Successfully Removed'
                 }
             }
         }
-
-        stage('Push Image to Registry') {
-            steps {
-                script {
-                    sh 'docker tag app_from_jenkins:v4 your-docker-repo/app_from_jenkins:v4'
-                    sh 'docker push your-docker-repo/app_from_jenkins:v4'
+        stage('Deploy App On KuberNetes') {
+            steps{
+              sh 'cd kubernetes && kubectl -- apply -f .'
+            }
+            post {
+                success {
+                    echo 'App Successfully Deployed'
                 }
             }
-        }
-
-        stage('Deploy to Kubernetes') {
-            steps {
-                script {
-                    // Ensure kubectl is available
-                    sh 'kubectl version --client'
-
-                    // Apply Kubernetes manifests
-                    sh 'kubectl apply -f kubernetes/'
-                }
-            }
-        }
-
-        stage('Verify Deployment') {
-            steps {
-                script {
-                    sh 'kubectl get pods -o wide'
-                }
-            }
-        }
-    }
-
-    post {
-        success {
-            echo 'Deployment successful!'
-        }
-        failure {
-            echo 'Deployment failed. Check logs for details.'
         }
     }
 }
